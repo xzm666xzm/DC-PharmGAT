@@ -33,3 +33,8 @@ python train_scaffold.py --target <target_name> --data-root LIT-PCBA --target-fo
 
 Use `--models 1-3` for a short smoke run, or `--dry-run` to inspect commands
 without launching training.
+
+During the hyperparameter search, `train_target.py` calls `train.py` with
+`--skip_test_eval`, selects the checkpoint by validation AUC, and then runs a
+single held-out test evaluation of the selected checkpoint with
+`--final_test_only`.
