@@ -59,6 +59,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-dataset", "--d", required=True, choices=["dude", "lit-pcba", "scaffold", "normal"])
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--skip_test_eval",
+        action="store_true",
+        help="Skip held-out test-set evaluation during hyperparameter/model selection.",
+    )
+    parser.add_argument(
+        "--final_test_only",
+        action="store_true",
+        help="Load an existing checkpoint and evaluate the held-out test set once.",
+    )
     parser.add_argument("--disable_tpp_bias", action="store_true", default=False)
     parser.add_argument("--hard_concat_tpp", action="store_true", default=False)
     parser.add_argument("--fixed_bias", action="store_true", default=False)
@@ -358,83 +368,110 @@ def main() -> None:
     patience = 15
     stale_epochs = 0
     start = time.time()
+    weight_path = weights_dir / f"model{args.model_number}.pth"
 
-    for epoch in range(1, args.epochs + 1):
-        model.train()
-        running_loss = 0.0
-        seen = 0
-        for atoms, bonds, edges, (labels, _) in train_loader:
-            labels = labels.to(device)
-            logits = model((atoms.to(device), bonds.to(device), edges.to(device)))
-            loss = loss_fn(logits, labels)
-            if hasattr(model, "compute_contrastive_loss") and epoch >= 10:
-                warmup = min(1.0, (epoch - 10) / 10)
-                loss = loss + warmup * model.compute_contrastive_loss((atoms.to(device), bonds.to(device), edges.to(device)))
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            running_loss += float(loss.item()) * len(labels)
-            seen += len(labels)
-
-        train_loss = running_loss / max(1, seen)
-        train_losses.append(train_loss)
-
-        model.eval()
-        valid_loss_sum = 0.0
-        valid_seen = 0
-        with torch.no_grad():
-            for atoms, bonds, edges, (labels, _) in valid_loader:
+    if args.final_test_only:
+        if not weight_path.exists():
+            raise FileNotFoundError(f"Cannot run final test: missing checkpoint {weight_path}")
+        best_state = torch.load(weight_path, map_location=device)
+        print(f"loaded selected checkpoint for final test evaluation: {weight_path}")
+    else:
+        for epoch in range(1, args.epochs + 1):
+            model.train()
+            running_loss = 0.0
+            seen = 0
+            for atoms, bonds, edges, (labels, _) in train_loader:
                 labels = labels.to(device)
                 logits = model((atoms.to(device), bonds.to(device), edges.to(device)))
-                valid_loss_sum += float(loss_fn(logits, labels).item()) * len(labels)
-                valid_seen += len(labels)
-        valid_loss = valid_loss_sum / max(1, valid_seen)
-        valid_losses.append(valid_loss)
-        print(f"epoch {epoch:03d}: train_loss={train_loss:.5f}, valid_loss={valid_loss:.5f}")
+                loss = loss_fn(logits, labels)
+                if hasattr(model, "compute_contrastive_loss") and epoch >= 10:
+                    warmup = min(1.0, (epoch - 10) / 10)
+                    loss = loss + warmup * model.compute_contrastive_loss(
+                        (atoms.to(device), bonds.to(device), edges.to(device))
+                    )
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                running_loss += float(loss.item()) * len(labels)
+                seen += len(labels)
 
-        if valid_loss < best_valid_loss:
-            best_valid_loss = valid_loss
-            best_state = copy.deepcopy(model.state_dict())
-            stale_epochs = 0
-        else:
-            stale_epochs += 1
-            if stale_epochs >= patience:
-                print(f"early stopping at epoch {epoch}")
-                break
+            train_loss = running_loss / max(1, seen)
+            train_losses.append(train_loss)
 
-    weight_path = weights_dir / f"model{args.model_number}.pth"
-    torch.save(best_state, weight_path)
+            model.eval()
+            valid_loss_sum = 0.0
+            valid_seen = 0
+            with torch.no_grad():
+                for atoms, bonds, edges, (labels, _) in valid_loader:
+                    labels = labels.to(device)
+                    logits = model((atoms.to(device), bonds.to(device), edges.to(device)))
+                    valid_loss_sum += float(loss_fn(logits, labels).item()) * len(labels)
+                    valid_seen += len(labels)
+            valid_loss = valid_loss_sum / max(1, valid_seen)
+            valid_losses.append(valid_loss)
+            print(f"epoch {epoch:03d}: train_loss={train_loss:.5f}, valid_loss={valid_loss:.5f}")
+
+            if valid_loss < best_valid_loss:
+                best_valid_loss = valid_loss
+                best_state = copy.deepcopy(model.state_dict())
+                stale_epochs = 0
+            else:
+                stale_epochs += 1
+                if stale_epochs >= patience:
+                    print(f"early stopping at epoch {epoch}")
+                    break
+
+        torch.save(best_state, weight_path)
+
     model.load_state_dict(best_state, strict=False)
 
     y_valid_eval, valid_scores, _ = predict(model, valid_loader, device)
     threshold = best_threshold(y_valid_eval, valid_scores)
     valid_metrics = binary_metrics(y_valid_eval, valid_scores, threshold)
 
-    y_test_eval, test_scores, test_ids = predict(model, test_loader, device)
-    test_metrics = binary_metrics(y_test_eval, test_scores, threshold)
-    enrich = enrichment_values(y_test_eval, test_scores)
+    if train_losses:
+        pd.DataFrame({"train_loss": train_losses, "valid_loss": valid_losses}).to_csv(
+            model_dir / "lossData.txt",
+            index=False,
+        )
+        plt.figure()
+        plt.plot(range(1, len(train_losses) + 1), train_losses, label="Training Loss")
+        plt.plot(range(1, len(valid_losses) + 1), valid_losses, label="Validation Loss")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(model_dir / "loss.png")
+        plt.close()
 
     print(
         "validation: "
         f"auc={valid_metrics['auc']:.4f}, prauc={valid_metrics['prauc']:.4f}, "
         f"precision={valid_metrics['precision']:.4f}, recall={valid_metrics['recall']:.4f}, f1={valid_metrics['f1']:.4f}"
     )
+
+    if args.skip_test_eval:
+        with (run_dir / "hpResults.csv").open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"{args.model_number},{args.os},{args.batch_size},{args.lr},{args.df},0,{args.fplength},"
+                f"{valid_metrics['auc']},{valid_metrics['prauc']},{valid_metrics['precision']},"
+                f"{valid_metrics['recall']},{valid_metrics['f1']},{valid_metrics['hits']},{threshold},"
+                ",,,,,,,,,,,,\n"
+            )
+        print("skipped held-out test evaluation for model-selection run")
+        print(f"saved model to {weight_path}")
+        print(f"elapsed minutes: {(time.time() - start) / 60:.1f}")
+        return
+
+    y_test_eval, test_scores, test_ids = predict(model, test_loader, device)
+    test_metrics = binary_metrics(y_test_eval, test_scores, threshold)
+    enrich = enrichment_values(y_test_eval, test_scores)
+
     print(
         "test: "
         f"auc={test_metrics['auc']:.4f}, prauc={test_metrics['prauc']:.4f}, "
         f"precision={test_metrics['precision']:.4f}, recall={test_metrics['recall']:.4f}, f1={test_metrics['f1']:.4f}"
     )
-
-    pd.DataFrame({"train_loss": train_losses, "valid_loss": valid_losses}).to_csv(model_dir / "lossData.txt", index=False)
-    plt.figure()
-    plt.plot(range(1, len(train_losses) + 1), train_losses, label="Training Loss")
-    plt.plot(range(1, len(valid_losses) + 1), valid_losses, label="Validation Loss")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(model_dir / "loss.png")
-    plt.close()
 
     with (model_dir / "testset.txt").open("w", encoding="utf-8") as handle:
         handle.write("id,gfe,label\n")
