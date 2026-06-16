@@ -71,6 +71,13 @@ def parse_model_selection(value: str) -> set[int]:
     return selected
 
 
+def hyperparameters_for_model(model_number: int) -> tuple[int, float, float, int]:
+    for params in HYPERPARAMETERS:
+        if params[0] == model_number:
+            return params
+    raise ValueError(f"No hyperparameters found for model {model_number}")
+
+
 def resolve_path(path: str | None, base: Path = TARGET_TRAINING_DIR) -> Path | None:
     if path is None:
         return None
@@ -305,6 +312,7 @@ def run_training(args: argparse.Namespace, run_name: str, train_dataset: str) ->
             str(model_num),
             "-dataset",
             train_dataset,
+            "--skip_test_eval",
         ]
 
         print(f"Training model {model_num}: lr={lr}, wd={wd}, batch_size={batch_size}")
@@ -334,30 +342,41 @@ def summarize_results(run_name: str) -> int | None:
         return None
 
     df = pd.read_csv(results_file)
-    if df.empty or "test auc" not in df.columns:
-        print(f"Result file has no usable test auc column: {results_file}")
+    if df.empty or "validation auc" not in df.columns:
+        print(f"Result file has no usable validation auc column: {results_file}")
         return None
 
-    df_sorted = df.sort_values("test auc", ascending=False)
-    print("\nTop models by test AUC:")
+    df_valid = df.dropna(subset=["validation auc"])
+    if df_valid.empty:
+        print(f"Result file has no validation AUC values: {results_file}")
+        return None
+
+    df_sorted = df_valid.sort_values("validation auc", ascending=False)
+    print("\nTop models by validation AUC:")
     for _, row in df_sorted.head(5).iterrows():
         print(
             f"  model {int(row['model number'])}: "
-            f"test_auc={float(row['test auc']):.4f}, "
-            f"val_auc={float(row.get('validation auc', 0.0)):.4f}, "
-            f"test_prauc={float(row.get('test prauc', 0.0)):.4f}"
+            f"val_auc={float(row['validation auc']):.4f}, "
+            f"val_prauc={float(row.get('validation prauc', 0.0)):.4f}"
         )
 
     best = df_sorted.iloc[0]
     best_model = int(best["model number"])
+    _, best_lr, best_wd, best_batch_size = hyperparameters_for_model(best_model)
     best_json = TARGET_TRAINING_DIR / run_name / "best_stage1.json"
     with best_json.open("w", encoding="utf-8") as handle:
         json.dump(
             {
                 "model_number": best_model,
-                "test_auc": float(best["test auc"]),
-                "validation_auc": float(best.get("validation auc", 0.0)),
-                "test_prauc": float(best.get("test prauc", 0.0)),
+                "selection_metric": "validation_auc",
+                "selection_validation_auc": float(best["validation auc"]),
+                "validation_auc": float(best["validation auc"]),
+                "validation_prauc": float(best.get("validation prauc", 0.0)),
+                "final_test_auc": None,
+                "final_test_prauc": None,
+                "lr": best_lr,
+                "wd": best_wd,
+                "bs": best_batch_size,
                 "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             },
             handle,
@@ -369,8 +388,88 @@ def summarize_results(run_name: str) -> int | None:
     if best_model_path.exists():
         shutil.copy2(best_model_path, best_stage_path)
 
-    print(f"Best model: {best_model}")
+    print(f"Best validation-selected model: {best_model}")
     return best_model
+
+
+def run_final_test(args: argparse.Namespace, run_name: str, train_dataset: str, best_model: int) -> bool:
+    model_num, lr, wd, batch_size = hyperparameters_for_model(best_model)
+    training_jobs_dir = TARGET_TRAINING_DIR / run_name / "trainingJobs"
+    cmd = [
+        args.python,
+        str(EXPERIMENTS_DIR / "train.py"),
+        "-dropout",
+        str(args.dropout),
+        "-learn_rate",
+        str(lr),
+        "-os",
+        str(args.oversampling),
+        "-bs",
+        str(batch_size),
+        "-protein",
+        run_name,
+        "-fplen",
+        str(args.fingerprint_length),
+        "-wd",
+        str(wd),
+        "-mnum",
+        str(model_num),
+        "-dataset",
+        train_dataset,
+        "--final_test_only",
+    ]
+
+    print(f"\nFinal held-out test evaluation for validation-selected model {model_num}")
+    try:
+        result = run_command(cmd, cwd=training_jobs_dir, dry_run=args.dry_run)
+        if result.stdout and args.verbose:
+            print(result.stdout)
+    except subprocess.CalledProcessError as exc:
+        print(f"Final test evaluation failed with exit code {exc.returncode}")
+        if exc.stdout:
+            print(exc.stdout)
+        if exc.stderr:
+            print(exc.stderr)
+        if not args.keep_going:
+            raise
+        return False
+
+    if args.dry_run:
+        return True
+
+    results_file = TARGET_TRAINING_DIR / run_name / "hpResults.csv"
+    best_json = TARGET_TRAINING_DIR / run_name / "best_stage1.json"
+    df = pd.read_csv(results_file)
+    rows = df[(df["model number"] == model_num) & df["test auc"].notna()]
+    if rows.empty:
+        print("Final test row was not found in hpResults.csv")
+        return False
+
+    final_row = rows.iloc[-1]
+    record: dict[str, object] = {}
+    if best_json.exists():
+        with best_json.open("r", encoding="utf-8") as handle:
+            record = json.load(handle)
+
+    record.update(
+        {
+            "model_number": model_num,
+            "selection_metric": record.get("selection_metric", "validation_auc"),
+            "final_test_auc": float(final_row["test auc"]),
+            "final_test_prauc": float(final_row["test prauc"]),
+            "test_auc": float(final_row["test auc"]),
+            "test_prauc": float(final_row["test prauc"]),
+            "final_test_updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    )
+    with best_json.open("w", encoding="utf-8") as handle:
+        json.dump(record, handle, indent=2)
+
+    print(
+        f"Final test metrics: auc={record['final_test_auc']:.4f}, "
+        f"prauc={record['final_test_prauc']:.4f}"
+    )
+    return True
 
 
 def build_parser(default_split_mode: str = "complete") -> argparse.ArgumentParser:
@@ -463,7 +562,9 @@ def main(default_split_mode: str = "complete") -> None:
 
     successes = run_training(args, run_name, train_dataset)
     print(f"\nSuccessful models: {len(successes)}")
-    summarize_results(run_name)
+    best_model = summarize_results(run_name)
+    if best_model is not None:
+        run_final_test(args, run_name, train_dataset, best_model)
 
 
 if __name__ == "__main__":
