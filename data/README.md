@@ -14,4 +14,10 @@ data/
   processed/
 ```
 
-Large datasets are usually distributed through the original database providers or a versioned external archive rather than committed directly to GitHub.
+The processed datasets and fixed data splits supporting the manuscript are publicly archived on Zenodo:
+
+- Version-specific DOI: https://doi.org/10.5281/zenodo.21109686
+- All-versions DOI: https://doi.org/10.5281/zenodo.20669417
+- Archive file: `DCGAT_v102_public_clean.zip`
+
+The archive includes processed LIT-PCBA datasets, ZINC-derived compound lists and docking-score proxy labels, processed ChEMBL external-validation datasets, and supplementary tables. The original DUD-E, LIT-PCBA, ZINC, ChEMBL, and PDB records remain subject to the terms of their respective data providers.
