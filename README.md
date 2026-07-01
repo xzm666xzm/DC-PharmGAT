@@ -25,7 +25,21 @@ results/
 
 ## Data and checkpoints
 
-Following common open-source practice, this repository keeps code under Git version control and uses external archives for large research artifacts.
+This repository keeps the source code under Git version control. The complete data and model reproducibility archive is publicly available on Zenodo:
+
+- Version-specific DOI: https://doi.org/10.5281/zenodo.21109686
+        
+        
+        
+        
+- All-versions DOI: https://doi.org/10.5281/zenodo.20669417
+        
+        
+        
+        
+- Archive file: `DCGAT_v102_public_clean.zip`
+
+The Zenodo archive contains the processed datasets, fixed train/validation/test splits, final trained model checkpoints, target pharmacophore profile files, model-selection metadata, result source files, manifest file, and reproducibility README required to reproduce the manuscript results and access the final models.
 
 Raw datasets should be obtained from their original sources:
 
@@ -35,7 +49,7 @@ Raw datasets should be obtained from their original sources:
 - ChEMBL
 - Protein Data Bank
 
-For publication and long-term reproducibility, processed data splits, trained checkpoints, and large generated results can be distributed through a versioned archive such as Zenodo, Figshare, OSF, institutional storage, Google Drive, or Hugging Face Hub. Once available, add the download link or DOI here and place the downloaded files under the corresponding directories above.
+After downloading `DCGAT_v102_public_clean.zip`, extract `data/` and `models/` from the archive and place them under the corresponding repository directories, or keep the extracted archive as a sibling reproducibility directory and update script paths accordingly.
 
 ## Typical usage
 
