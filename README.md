@@ -28,15 +28,7 @@ results/
 This repository keeps the source code under Git version control. The complete data and model reproducibility archive is publicly available on Zenodo:
 
 - Version-specific DOI: https://doi.org/10.5281/zenodo.21109686
-        
-        
-        
-        
 - All-versions DOI: https://doi.org/10.5281/zenodo.20669417
-        
-        
-        
-        
 - Archive file: `DCGAT_v102_public_clean.zip`
 
 The Zenodo archive contains the processed datasets, fixed train/validation/test splits, final trained model checkpoints, target pharmacophore profile files, model-selection metadata, result source files, manifest file, and reproducibility README required to reproduce the manuscript results and access the final models.
@@ -68,6 +60,12 @@ python experiments/train.py
 ```
 
 Representative target-training workflows are kept under `experiments/target_training/`. They are parameterized by command-line arguments instead of being duplicated for each target. Data-processing and docking scripts are under `scripts/`.
+
+The current model implementation supports the updated TPP-conditioned architecture. By default it preserves the binary TPP prior used in the submitted experiments. To enable the FiLM-style target conditioning branch and include normalized pharmacophore counts, pass:
+
+```bash
+python experiments/target_training/train_complete.py --target <target> --enable-tpp-conditioning --tpp-input-mode binary_counts
+```
 
 ## Citation
 
