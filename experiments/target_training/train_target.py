@@ -107,6 +107,25 @@ def command_env() -> dict[str, str]:
     return env
 
 
+def tpp_model_args(args: argparse.Namespace) -> list[str]:
+    cmd: list[str] = []
+    if args.enable_tpp_conditioning:
+        cmd.append("--enable_tpp_conditioning")
+    cmd.extend(
+        [
+            "--tpp_input_mode",
+            args.tpp_input_mode,
+            "--tpp_count_clip",
+            str(args.tpp_count_clip),
+            "--tpp_hidden_dim",
+            str(args.tpp_hidden_dim),
+            "--tpp_film_scale",
+            str(args.tpp_film_scale),
+        ]
+    )
+    return cmd
+
+
 def run_command(cmd: list[str], cwd: Path, dry_run: bool = False) -> subprocess.CompletedProcess[str]:
     print(" ".join(cmd))
     if dry_run:
@@ -314,6 +333,7 @@ def run_training(args: argparse.Namespace, run_name: str, train_dataset: str) ->
             train_dataset,
             "--skip_test_eval",
         ]
+        cmd.extend(tpp_model_args(args))
 
         print(f"Training model {model_num}: lr={lr}, wd={wd}, batch_size={batch_size}")
         start = time.time()
@@ -418,6 +438,7 @@ def run_final_test(args: argparse.Namespace, run_name: str, train_dataset: str, 
         train_dataset,
         "--final_test_only",
     ]
+    cmd.extend(tpp_model_args(args))
 
     print(f"\nFinal held-out test evaluation for validation-selected model {model_num}")
     try:
@@ -507,6 +528,11 @@ def build_parser(default_split_mode: str = "complete") -> argparse.ArgumentParse
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--oversampling", type=int, default=25)
     parser.add_argument("--skip-tpp", action="store_true", help="Skip pharmacophore extraction.")
+    parser.add_argument("--enable-tpp-conditioning", action="store_true", default=False)
+    parser.add_argument("--tpp-input-mode", choices=["binary", "binary_counts"], default="binary")
+    parser.add_argument("--tpp-count-clip", type=float, default=20.0)
+    parser.add_argument("--tpp-hidden-dim", type=int, default=64)
+    parser.add_argument("--tpp-film-scale", type=float, default=0.1)
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running them.")
     parser.add_argument("--force", action="store_true", help="Overwrite reusable generated files when possible.")
     parser.add_argument("--keep-going", action="store_true", help="Continue when one model fails.")
