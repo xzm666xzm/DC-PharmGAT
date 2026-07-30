@@ -72,6 +72,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disable_tpp_bias", action="store_true", default=False)
     parser.add_argument("--hard_concat_tpp", action="store_true", default=False)
     parser.add_argument("--fixed_bias", action="store_true", default=False)
+    parser.add_argument("--enable_tpp_conditioning", action="store_true", default=False)
+    parser.add_argument("--tpp_input_mode", choices=["binary", "binary_counts"], default="binary")
+    parser.add_argument("--tpp_count_clip", type=float, default=20.0)
+    parser.add_argument("--tpp_hidden_dim", type=int, default=64)
+    parser.add_argument("--tpp_film_scale", type=float, default=0.1)
     return parser.parse_args()
 
 
@@ -191,6 +196,11 @@ def build_model_params(args: argparse.Namespace) -> dict[str, object]:
         "spcl_weight": 0.01,
         "spcl_proj_dim": 64,
         "spcl_temperature": 0.2,
+        "enable_tpp_conditioning": args.enable_tpp_conditioning,
+        "tpp_input_mode": args.tpp_input_mode,
+        "tpp_count_clip": args.tpp_count_clip,
+        "tpp_hidden_dim": args.tpp_hidden_dim,
+        "tpp_film_scale": args.tpp_film_scale,
         "disable_tpp_bias": args.disable_tpp_bias,
         "hard_concat_tpp": args.hard_concat_tpp,
         "fixed_bias": args.fixed_bias,
