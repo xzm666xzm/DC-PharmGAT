@@ -1,71 +1,67 @@
 # DC-PharmGAT
 
-Clean code release for the manuscript:
+Source code accompanying the manuscript:
 
-**DC-PharmGAT: A Target-Conditioned Pharmacophore-Guided Dual-Channel Graph Neural Network for Interpretable Virtual Screening**
+**DC-PharmGAT: A Target-Conditioned, Pharmacophore-Guided Dual-Channel Graph Neural Network for Interpretable Virtual Screening**
 
-This repository provides the source code for model training, benchmark comparison, ablation studies, ZINC screening, ChEMBL external validation, docking-score label generation, and interpretability analysis.
+This repository contains the model implementation, configurable training workflows, molecular-feature and pharmacophore extraction, data-preprocessing utilities, and molecular-docking scripts.
 
 ## Repository layout
 
 ```text
 src/
-  Core model, molecular feature, utility, and pharmacophore extraction modules.
+  Core model, molecular features, graph featurization, and pharmacophore extraction.
 experiments/
-  Training scripts for benchmark targets, scaffold splits, baselines, ablation, ZINC, and ChEMBL validation.
-scripts/
-  Data preprocessing, receptor/docking preparation, screening, and interpretability scripts.
-data/
-  Recommended location for raw datasets and processed splits.
-checkpoints/
-  Recommended location for trained model weights.
-results/
-  Recommended location for generated predictions, metrics, tables, and figures.
+  Training and data-inspection code.
+experiments/target_training/
+  Configurable complete/random-split and scaffold-split training entry points.
+scripts/data_preprocessing/
+  Dataset preparation, curation, and split-verification code.
+scripts/docking/
+  Receptor preparation, ligand extraction, and Smina docking code.
+requirements.txt
+  Python dependencies.
 ```
 
-## Data and checkpoints
+## Installation
 
-This repository keeps the source code under Git version control. The complete data and model reproducibility archive is publicly available on Zenodo:
-
-- Version-specific DOI: https://doi.org/10.5281/zenodo.21109686
-- All-versions DOI: https://doi.org/10.5281/zenodo.20669417
-- Archive file: `DCGAT_v102_public_clean.zip`
-
-The Zenodo archive contains the processed datasets, fixed train/validation/test splits, final trained model checkpoints, target pharmacophore profile files, model-selection metadata, result source files, manifest file, and reproducibility README required to reproduce the manuscript results and access the final models.
-
-Raw datasets should be obtained from their original sources:
-
-- DUD-E
-- LIT-PCBA
-- ZINC
-- ChEMBL
-- Protein Data Bank
-
-After downloading `DCGAT_v102_public_clean.zip`, extract `data/` and `models/` from the archive and place them under the corresponding repository directories, or keep the extracted archive as a sibling reproducibility directory and update script paths accordingly.
-
-## Typical usage
-
-Run from the repository root and expose the core modules through `PYTHONPATH`:
+Install the Python dependencies in an environment compatible with the required RDKit, PyTorch, and PyTorch Geometric packages:
 
 ```bash
-set PYTHONPATH=src
-python experiments/train.py
+python -m pip install -r requirements.txt
 ```
 
-For Linux/macOS:
+Docking utilities additionally require the relevant Open Babel and Smina executables. See [scripts/docking/README.md](scripts/docking/README.md) for their command-line arguments.
+
+## Data inputs and local outputs
+
+Prepare input datasets separately using the original DUD-E, LIT-PCBA, ZINC, ChEMBL, and Protein Data Bank sources, together with the study's supplementary materials where applicable. Supply the local input directory with `--data-root`.
+
+Training produces model checkpoints, selection metadata, and evaluation outputs locally. The repository tracks source code, dependency information, and usage documentation. Generated data, model binaries, caches, logs, and result files are excluded by `.gitignore`.
+
+## Training
+
+Run commands from the repository root and expose the core modules through `PYTHONPATH`.
+
+PowerShell:
+
+```powershell
+$env:PYTHONPATH = "src"
+```
+
+Linux/macOS:
 
 ```bash
 export PYTHONPATH=src
-python experiments/train.py
 ```
 
-Representative target-training workflows are kept under `experiments/target_training/`. They are parameterized by command-line arguments instead of being duplicated for each target. Data-processing and docking scripts are under `scripts/`.
-
-The current model implementation supports the updated TPP-conditioned architecture. By default it preserves the binary TPP prior used in the submitted experiments. To enable the FiLM-style target conditioning branch and include normalized pharmacophore counts, pass:
+With the target dataset prepared, preview a complete/random-split training run with count-aware TPP conditioning:
 
 ```bash
-python experiments/target_training/train_complete.py --target <target> --enable-tpp-conditioning --tpp-input-mode binary_counts
+python experiments/target_training/train_complete.py --target TARGET --data-root DUD-E --enable-tpp-conditioning --tpp-input-mode binary_counts --dry-run
 ```
+
+Replace `TARGET` and the dataset directory with the desired local inputs. Omit `--dry-run` to launch training. For complete/random and scaffold workflows, data formats, and model-selection options, see [experiments/target_training/README.md](experiments/target_training/README.md).
 
 ## Citation
 

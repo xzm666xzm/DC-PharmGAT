@@ -1,0 +1,54 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local data, model, and run-output directories
+/data/
+/checkpoints/
+/models/
+/results/
+/outputs/
+/runs/
+/logs/
+**/res/
+
+# Model weights and serialized run artifacts
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.safetensors
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+best_stage1.json
+*_tpp.json
+
+# Dataset and intermediate molecular files
+*.csv
+*.tsv
+*.smi
+*.ism
+*.sdf
+*.mol
+*.mol2
+*.pdb
+*.pdbqt
+*.npy
+*.npz
+
+# Generated reports, figures, logs, and archives
+*.log
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.xlsx
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
